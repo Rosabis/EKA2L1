@@ -59,6 +59,12 @@ namespace eka2l1::drivers {
                     LOG_CRITICAL(DRIVER_GRAPHICS, "gladLoadGLES2Loader() failed");
                     return;
                 }
+#elif EKA2L1_PLATFORM(WASM)
+                // WebGL2 - glad should be loaded with SDL's proc loader
+                if (!gladLoadGLES2Loader((GLADloadproc)SDL_GL_GetProcAddress)) {
+                    LOG_CRITICAL(DRIVER_GRAPHICS, "gladLoadGLES2Loader() failed for WebGL");
+                    return;
+                }
 #endif
 
                 break;
@@ -1214,7 +1220,7 @@ namespace eka2l1::drivers {
         }
 
         if (clear_bits & draw_buffer_bit_depth_buffer) {
-#ifdef EKA2L1_PLATFORM_ANDROID
+#if defined(EKA2L1_PLATFORM_ANDROID) || defined(__EMSCRIPTEN__)
             glClearDepthf(color_to_clear[4]);
 #else
             glClearDepth(color_to_clear[4]);

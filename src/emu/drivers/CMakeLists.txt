@@ -128,6 +128,11 @@ elseif(HAIKU)
         src/graphics/backend/context_bgl.cpp
         src/graphics/backend/context_bgl.h
     )
+elseif(EMSCRIPTEN)
+    target_sources(drivers PRIVATE
+        src/graphics/backend/context_emscripten.cpp
+        src/graphics/backend/context_emscripten.h
+    )
 elseif(ANDROID)
     target_sources(drivers PRIVATE
         src/graphics/backend/context_egl.cpp
@@ -160,11 +165,16 @@ target_include_directories(miniBAE_EMU
     PRIVATE include/drivers/audio/backend/minibae ${MINIBAE_INTERNAL_INCLUDE_DIRS})
 target_link_libraries(miniBAE_EMU PRIVATE common)
 
-target_link_libraries(drivers PRIVATE common cubeb ffmpeg glad glm miniBAE_EMU)
-if (NOT ANDROID)
-    target_link_libraries(drivers PRIVATE SDL2)
+if (EMSCRIPTEN)
+    target_link_libraries(drivers PRIVATE common glad glm miniBAE_EMU)
+    # SDL2 is provided by Emscripten via -s USE_SDL=2, linked automatically
 else()
-    target_link_libraries(drivers PRIVATE android)
+    target_link_libraries(drivers PRIVATE common cubeb ffmpeg glad glm miniBAE_EMU)
+    if (NOT ANDROID)
+        target_link_libraries(drivers PRIVATE SDL2)
+    else()
+        target_link_libraries(drivers PRIVATE android)
+    endif()
 endif()
 
 target_include_directories(drivers PUBLIC include ${MINIBAE_PUBLIC_INCLUDE_DIRS} ${TSF_INCLUDE})

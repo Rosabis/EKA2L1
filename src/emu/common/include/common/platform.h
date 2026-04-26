@@ -82,7 +82,7 @@
 #endif
 #endif
 
-#ifdef __unix__
+#if defined(__unix__) && !defined(__EMSCRIPTEN__)
 #define EKA2L1_PLATFORM_UNIX 1
 #endif
 
@@ -102,6 +102,10 @@
 
 #ifdef __ANDROID__
 #define EKA2L1_PLATFORM_ANDROID 1
+#endif
+
+#ifdef __EMSCRIPTEN__
+#define EKA2L1_PLATFORM_WASM 1
 #endif
 
 #ifdef __EPOC32__

@@ -33,7 +33,12 @@ set (fmt_DIR fmt)
 
 set(CMAKE_REQUIRED_QUIET 1)
 
-if (MSVC)
+if (EMSCRIPTEN)
+    # WASM is not ARM, but we can't use dynarmic either (requires x86 host)
+    # Force ARM32 flag so dynarmic is skipped and dyncom is used
+    set(ARCHITECTURE_ARM32 TRUE)
+    set(ARCHITECTURE_AARCH64 FALSE)
+elseif (MSVC)
     check_symbol_exists("_M_ARM" "" ARCHITECTURE_ARM32)
     check_symbol_exists("_M_ARM64" "" ARCHITECTURE_AARCH64)
 else()
@@ -161,20 +166,23 @@ add_library(Vulkan INTERFACE)
 target_include_directories(Vulkan INTERFACE ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(Vulkan INTERFACE ${Vulkan_LIBRARIES})
 
-# Cubeb
-option (BUILD_TOOLS "Build tools" OFF)
-option (BUILD_TESTS "Build cubeb tests" OFF)
+# Cubeb - Not available on Emscripten (uses native audio APIs)
+if (NOT EMSCRIPTEN)
+    option (BUILD_TOOLS "Build tools" OFF)
+    option (BUILD_TESTS "Build cubeb tests" OFF)
 
-# Forcefully disable AAudio (we build with API target 21 minimum)
-set (USE_AAUDIO FALSE CACHE INTERNAL "" FORCE)
+    # Forcefully disable AAudio (we build with API target 21 minimum)
+    set (USE_AAUDIO FALSE CACHE INTERNAL "" FORCE)
 
-add_subdirectory(cubeb)
+    add_subdirectory(cubeb)
+endif()
 
-
-# FFMPEG
-add_subdirectory(ffmpeg)
-if (APPLE)
-    target_link_libraries(ffmpeg INTERFACE "-framework CoreVideo" "iconv")
+# FFMPEG - Not available on Emscripten
+if (NOT EMSCRIPTEN)
+    add_subdirectory(ffmpeg)
+    if (APPLE)
+        target_link_libraries(ffmpeg INTERFACE "-framework CoreVideo" "iconv")
+    endif()
 endif()
 
 option(CAPSTONE_BUILD_SHARED "Build shared library" OFF)
@@ -225,9 +233,8 @@ set(MINIBAE_SHARED_SOURCES ${MINIBAE_SHARED_SOURCES} CACHE INTERNAL "MiniBAE sou
 # TinySoundFont
 set (TSF_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} CACHE INTERNAL "TSF include path")
 
-# SDL2
-# Can't believe in 2022 the official CMake can't still ship a FindSDL2 with the program...
-if (NOT ANDROID)
+# SDL2 - Emscripten provides its own SDL2 port via -s USE_SDL=2
+if (NOT ANDROID AND NOT EMSCRIPTEN)
     set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/sdl2-cmake-scripts")
 
     if(APPLE)
@@ -244,24 +251,27 @@ if (NOT ANDROID)
     target_link_libraries(SDL2 INTERFACE "${SDL2_LIBRARY}")
 endif()
 
-# libuv
-option(LIBUV_BUILD_TESTS "Build test for libuv" OFF)
-option(LIBUV_BUILD_BENCH "Build bench for libuv" OFF)
-option(BUILD_UVW_LIBS "Build UVW libraries" ON)
-option(FETCH_LIBUV "Fetch the libuv repo using CMake FetchContent facility" ON)
-set (BUILD_TESTING OFF CACHE INTERNAL "Enable testing with ctest." FORCE)
+# libuv - Not available on Emscripten
+if (NOT EMSCRIPTEN)
+    option(LIBUV_BUILD_TESTS "Build test for libuv" OFF)
+    option(LIBUV_BUILD_BENCH "Build bench for libuv" OFF)
+    option(BUILD_UVW_LIBS "Build UVW libraries" ON)
+    option(FETCH_LIBUV "Fetch the libuv repo using CMake FetchContent facility" ON)
+    set (BUILD_TESTING OFF CACHE INTERNAL "Enable testing with ctest." FORCE)
 
-add_subdirectory(uvw)
-add_subdirectory(uvlooper)
+    add_subdirectory(uvw)
+    add_subdirectory(uvlooper)
+endif()
 
-# UPNP
+# UPNP - Not available on Emscripten
+if (NOT EMSCRIPTEN)
+    option (UPNPC_BUILD_SHARED "Build shared library" FALSE)
+    option (UPNPC_BUILD_TESTS "Build test executables" FALSE)
+    option (UPNPC_BUILD_SAMPLE "Build sample executables" FALSE)
+    option (UPNPC_NO_INSTALL "Disable installation" TRUE)
 
-option (UPNPC_BUILD_SHARED "Build shared library" FALSE)
-option (UPNPC_BUILD_TESTS "Build test executables" FALSE)
-option (UPNPC_BUILD_SAMPLE "Build sample executables" FALSE)
-option (UPNPC_NO_INSTALL "Disable installation" TRUE)
-
-add_subdirectory(miniupnp/miniupnpc)
+    add_subdirectory(miniupnp/miniupnpc)
+endif()
 
 # libtess2
 

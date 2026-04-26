@@ -1,0 +1,880 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="EKA2L1 - Symbian OS Emulator running in your browser via WebAssembly">
+    <title>EKA2L1 Web - Symbian Emulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* ---- Splash / Loading Screen ---- */
+        #splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        #splash-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .splash-logo {
+            font-size: 3em;
+            font-weight: bold;
+            color: #e94560;
+            text-shadow: 0 0 20px rgba(233, 69, 96, 0.5);
+            margin-bottom: 10px;
+        }
+
+        .splash-subtitle {
+            font-size: 1.2em;
+            color: #a0a0c0;
+            margin-bottom: 40px;
+        }
+
+        .loading-bar-container {
+            width: 400px;
+            max-width: 80vw;
+            height: 6px;
+            background: #2a2a4a;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .loading-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #0f3460);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .loading-text {
+            color: #8080a0;
+            font-size: 0.9em;
+        }
+
+        /* ---- Main UI ---- */
+        #main-container {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            flex-direction: column;
+        }
+
+        /* ---- Toolbar ---- */
+        #toolbar {
+            background: #16213e;
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid #2a2a4a;
+            min-height: 40px;
+        }
+
+        .toolbar-btn {
+            background: #0f3460;
+            color: #e0e0e0;
+            border: 1px solid #3a3a6a;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+
+        .toolbar-btn:hover {
+            background: #1a4a80;
+            border-color: #5a5aaa;
+        }
+
+        .toolbar-btn:active {
+            background: #0a2a50;
+        }
+
+        .toolbar-btn.active {
+            background: #e94560;
+            border-color: #e94560;
+        }
+
+        .toolbar-spacer {
+            flex: 1;
+        }
+
+        .toolbar-fps {
+            color: #80ff80;
+            font-family: monospace;
+            font-size: 0.85em;
+            min-width: 70px;
+            text-align: right;
+        }
+
+        /* ---- Emulator Display ---- */
+        #emulator-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            position: relative;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* ---- Overlay Messages ---- */
+        .overlay-msg {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 20px 40px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            text-align: center;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* ---- File Dialog ---- */
+        #file-dialog {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 500;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #file-dialog.visible {
+            display: flex;
+        }
+
+        .file-dialog-content {
+            background: #1a1a2e;
+            border: 1px solid #3a3a6a;
+            border-radius: 8px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .file-dialog-content h2 {
+            margin-bottom: 15px;
+            color: #e94560;
+        }
+
+        .file-dialog-content p {
+            margin-bottom: 15px;
+            color: #a0a0c0;
+            line-height: 1.5;
+        }
+
+        .file-drop-zone {
+            border: 2px dashed #3a3a6a;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 15px;
+        }
+
+        .file-drop-zone:hover, .file-drop-zone.dragover {
+            border-color: #e94560;
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .file-drop-zone .icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .dialog-btn {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-right: 8px;
+        }
+
+        .dialog-btn:hover {
+            background: #c73a55;
+        }
+
+        .dialog-btn.secondary {
+            background: #3a3a6a;
+        }
+
+        .dialog-btn.secondary:hover {
+            background: #4a4a8a;
+        }
+
+        /* ---- Settings Panel ---- */
+        #settings-panel {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 320px;
+            height: 100%;
+            background: #1a1a2e;
+            border-left: 1px solid #3a3a6a;
+            z-index: 400;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #settings-panel.visible {
+            display: block;
+        }
+
+        #settings-panel h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+        }
+
+        .setting-group {
+            margin-bottom: 15px;
+        }
+
+        .setting-group label {
+            display: block;
+            color: #a0a0c0;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .setting-group select, .setting-group input[type="range"] {
+            width: 100%;
+            padding: 5px;
+            background: #0f0f23;
+            color: #e0e0e0;
+            border: 1px solid #3a3a6a;
+            border-radius: 4px;
+        }
+
+        /* ---- Status Bar ---- */
+        #status-bar {
+            background: #0f0f23;
+            padding: 3px 12px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 0.75em;
+            color: #606080;
+            border-top: 1px solid #2a2a4a;
+            min-height: 22px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .status-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #808080;
+        }
+
+        .status-indicator.green { background: #80ff80; }
+        .status-indicator.yellow { background: #ffff80; }
+        .status-indicator.red { background: #ff8080; }
+
+        /* ---- Touch Controls (Mobile) ---- */
+        #touch-controls {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 10px;
+            z-index: 200;
+        }
+
+        @media (max-width: 768px) {
+            #touch-controls.visible {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+            }
+
+            .toolbar-btn {
+                padding: 6px 8px;
+                font-size: 0.75em;
+            }
+
+            .touch-btn {
+                width: 50px;
+                height: 50px;
+                border-radius: 25px;
+                background: rgba(233, 69, 96, 0.4);
+                border: 2px solid rgba(233, 69, 96, 0.6);
+                color: white;
+                font-size: 1.2em;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                user-select: none;
+                -webkit-user-select: none;
+            }
+        }
+
+        /* Responsive canvas */
+        @media (max-width: 768px) {
+            #toolbar {
+                padding: 4px 6px;
+                gap: 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Splash Screen -->
+<div id="splash-screen">
+    <div class="splash-logo">🦆 EKA2L1</div>
+    <div class="splash-subtitle">Symbian OS Emulator</div>
+    <div class="loading-bar-container">
+        <div class="loading-bar" id="loading-bar"></div>
+    </div>
+    <div class="loading-text" id="loading-text">Initializing WebAssembly module...</div>
+</div>
+
+<!-- Main Emulator UI -->
+<div id="main-container">
+    <!-- Toolbar -->
+    <div id="toolbar">
+        <button class="toolbar-btn" id="btn-rom" title="Load ROM/RPKG">📦 ROM</button>
+        <button class="toolbar-btn" id="btn-install" title="Install SIS Package">📲 Install</button>
+        <button class="toolbar-btn" id="btn-run" title="Run/Pause">▶ Run</button>
+        <button class="toolbar-btn" id="btn-reset" title="Reset Emulator">🔄 Reset</button>
+        <div class="toolbar-spacer"></div>
+        <button class="toolbar-btn" id="btn-fullscreen" title="Toggle Fullscreen">⛶</button>
+        <button class="toolbar-btn" id="btn-settings" title="Settings">⚙ Settings</button>
+        <div class="toolbar-fps" id="fps-display">-- FPS</div>
+    </div>
+
+    <!-- Emulator Display -->
+    <div id="emulator-container">
+        <div id="canvas-container">
+            <canvas id="canvas" tabindex="-1"></canvas>
+        </div>
+        <div class="overlay-msg" id="overlay-msg" style="display:none;"></div>
+    </div>
+
+    <!-- Status Bar -->
+    <div id="status-bar">
+        <div class="status-item">
+            <div class="status-indicator" id="status-indicator"></div>
+            <span id="status-text">Ready</span>
+        </div>
+        <div class="status-item">
+            <span>WASM</span>
+        </div>
+    </div>
+</div>
+
+<!-- File Dialog -->
+<div id="file-dialog">
+    <div class="file-dialog-content">
+        <h2 id="dialog-title">Load ROM/RPKG</h2>
+        <p id="dialog-desc">Select a ROM file (.rom) or RPKG file (.rpkg) to boot the emulator.</p>
+        <div class="file-drop-zone" id="file-drop-zone">
+            <div class="icon">📁</div>
+            <div>Drag & Drop file here or click to browse</div>
+            <input type="file" id="file-input" style="display:none;" accept=".rom,.rpkg,.sis,.sisx">
+        </div>
+        <div>
+            <button class="dialog-btn" id="dialog-ok">OK</button>
+            <button class="dialog-btn secondary" id="dialog-cancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Panel -->
+<div id="settings-panel">
+    <h3>⚙ Settings</h3>
+    <div class="setting-group">
+        <label>Display Scale</label>
+        <input type="range" id="setting-scale" min="1" max="4" step="0.5" value="2">
+    </div>
+    <div class="setting-group">
+        <label>Audio Volume</label>
+        <input type="range" id="setting-volume" min="0" max="100" step="5" value="80">
+    </div>
+    <div class="setting-group">
+        <label>CPU Backend</label>
+        <select id="setting-cpu">
+            <option value="dyncom" selected>Dyncom (Interpreter)</option>
+        </select>
+    </div>
+    <div class="setting-group">
+        <label>Screen Orientation</label>
+        <select id="setting-orientation">
+            <option value="auto" selected>Auto</option>
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+        </select>
+    </div>
+    <br>
+    <button class="dialog-btn" id="settings-close">Close</button>
+</div>
+
+<!-- Touch Controls for Mobile -->
+<div id="touch-controls">
+    <button class="touch-btn" id="touch-menu">☰</button>
+    <button class="touch-btn" id="touch-a">A</button>
+    <button class="touch-btn" id="touch-b">B</button>
+</div>
+
+{{{ SCRIPT }}}
+
+<script>
+// ============================================================================
+// EKA2L1 Web Frontend Controller
+// ============================================================================
+
+(function() {
+    'use strict';
+
+    // ---- DOM Elements ----
+    const splashScreen = document.getElementById('splash-screen');
+    const loadingBar = document.getElementById('loading-bar');
+    const loadingText = document.getElementById('loading-text');
+    const mainContainer = document.getElementById('main-container');
+    const canvas = document.getElementById('canvas');
+    const emulatorContainer = document.getElementById('emulator-container');
+    const overlayMsg = document.getElementById('overlay-msg');
+    const fpsDisplay = document.getElementById('fps-display');
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
+    const fileDialog = document.getElementById('file-dialog');
+    const fileDropZone = document.getElementById('file-drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const settingsPanel = document.getElementById('settings-panel');
+
+    let module = null;
+    let isRunning = false;
+    let animationFrameId = null;
+    let currentDialogMode = 'rom'; // 'rom' or 'install'
+
+    // ---- Loading Progress ----
+    function updateLoadingProgress(percent, text) {
+        loadingBar.style.width = percent + '%';
+        if (text) loadingText.textContent = text;
+    }
+
+    // ---- Initialize the WASM Module ----
+    function initModule() {
+        updateLoadingProgress(10, 'Loading WebAssembly module...');
+
+        const moduleConfig = {
+            canvas: canvas,
+            print: function(text) {
+                console.log('[EKA2L1]', text);
+            },
+            printErr: function(text) {
+                console.error('[EKA2L1]', text);
+            },
+            setStatus: function(text) {
+                if (text) {
+                    updateLoadingProgress(-1, text);
+                }
+            },
+            totalDependencies: 0,
+            monitorRunDependencies: function(left) {
+                this.totalDependencies = Math.max(this.totalDependencies, left);
+                if (left) {
+                    var pct = Math.round((1 - left / this.totalDependencies) * 80) + 10;
+                    updateLoadingProgress(pct, 'Loading dependencies...');
+                } else {
+                    this.totalDependencies = 0;
+                }
+            },
+            preRun: [
+                function() {
+                    // Ensure audio context is resumed on user gesture
+                    if (module && module.autoResumeAudioContext) {
+                        module.autoResumeAudioContext(
+                            function() { return typeof AudioContext !== 'undefined'; },
+                            function() { return new AudioContext(); }
+                        );
+                    }
+                }
+            ],
+            postRun: [
+                function() {
+                    updateLoadingProgress(100, 'Ready!');
+                    setTimeout(function() {
+                        splashScreen.classList.add('hidden');
+                        mainContainer.style.display = 'flex';
+                        updateStatus('green', 'Ready - Load a ROM to begin');
+                    }, 500);
+                }
+            ]
+        };
+
+        // The module factory is created by Emscripten with EXPORT_NAME
+        if (typeof createEKA2L1Module !== 'undefined') {
+            createEKA2L1Module(moduleConfig).then(function(mod) {
+                module = mod;
+            }).catch(function(err) {
+                console.error('Failed to load EKA2L1:', err);
+                updateLoadingProgress(0, 'Error loading: ' + err.message);
+            });
+        } else {
+            // Fallback: module already loaded (non-modularized build)
+            module = moduleConfig;
+            if (typeof Module !== 'undefined') {
+                Object.assign(Module, moduleConfig);
+            }
+        }
+    }
+
+    // ---- Status Updates ----
+    function updateStatus(color, text) {
+        statusIndicator.className = 'status-indicator ' + color;
+        statusText.textContent = text;
+    }
+
+    function showOverlay(text, duration) {
+        overlayMsg.textContent = text;
+        overlayMsg.style.display = 'block';
+        if (duration) {
+            setTimeout(function() {
+                overlayMsg.style.display = 'none';
+            }, duration);
+        }
+    }
+
+    // ---- File Handling ----
+    function loadFileToVirtualFS(file, targetPath, callback) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var data = new Uint8Array(e.target.result);
+            try {
+                // Create parent directories if needed
+                var dir = targetPath.substring(0, targetPath.lastIndexOf('/'));
+                module.FS.mkdirTree(dir);
+                // Write file to virtual filesystem
+                module.FS.writeFile(targetPath, data);
+                console.log('Loaded file:', targetPath, '(' + data.length + ' bytes)');
+                if (callback) callback(true, targetPath);
+            } catch (err) {
+                console.error('Error writing file to VFS:', err);
+                if (callback) callback(false, err.message);
+            }
+        };
+        reader.onerror = function() {
+            if (callback) callback(false, 'Failed to read file');
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function handleFileSelect(files) {
+        if (!files || files.length === 0) return;
+
+        var file = files[0];
+        var ext = file.name.split('.').pop().toLowerCase();
+
+        if (currentDialogMode === 'rom') {
+            var targetPath = '/eka2l1/drives/z/rom.rom';
+            if (ext === 'rpkg') {
+                targetPath = '/eka2l1/rpkg/' + file.name;
+            }
+
+            showOverlay('Loading ' + file.name + '...', 0);
+            updateStatus('yellow', 'Loading ROM...');
+
+            loadFileToVirtualFS(file, targetPath, function(success, info) {
+                if (success) {
+                    showOverlay('ROM loaded! Starting emulation...', 2000);
+                    updateStatus('green', 'ROM: ' + file.name);
+                    // Call the C++ main initialization with the ROM path
+                    if (module && module._wasm_init_with_rom) {
+                        module._wasm_init_with_rom(module.allocate(
+                            module.intArrayFromString(targetPath), 'i8', 0
+                        ));
+                    }
+                } else {
+                    showOverlay('Error: ' + info, 3000);
+                    updateStatus('red', 'Failed to load ROM');
+                }
+            });
+        } else if (currentDialogMode === 'install') {
+            var targetPath = '/eka2l1/temp/' + file.name;
+            showOverlay('Installing ' + file.name + '...', 0);
+            updateStatus('yellow', 'Installing package...');
+
+            loadFileToVirtualFS(file, targetPath, function(success, info) {
+                if (success) {
+                    showOverlay('Package installed!', 2000);
+                    updateStatus('green', 'Installed: ' + file.name);
+                    if (module && module._wasm_install_package) {
+                        module._wasm_install_package(module.allocate(
+                            module.intArrayFromString(targetPath), 'i8', 0
+                        ));
+                    }
+                } else {
+                    showOverlay('Error: ' + info, 3000);
+                    updateStatus('red', 'Failed to install');
+                }
+            });
+        }
+
+        fileDialog.classList.remove('visible');
+    }
+
+    // ---- Emulation Control ----
+    function startEmulation() {
+        if (!module) return;
+        isRunning = true;
+        document.getElementById('btn-run').textContent = '⏸ Pause';
+        document.getElementById('btn-run').classList.add('active');
+        updateStatus('green', 'Running');
+        showOverlay('Running', 1000);
+
+        // Start the main loop
+        if (module._wasm_main_loop) {
+            module._wasm_main_loop();
+        }
+    }
+
+    function pauseEmulation() {
+        isRunning = false;
+        document.getElementById('btn-run').textContent = '▶ Run';
+        document.getElementById('btn-run').classList.remove('active');
+        updateStatus('yellow', 'Paused');
+        showOverlay('Paused', 0);
+    }
+
+    function resetEmulation() {
+        if (!module) return;
+        isRunning = false;
+        document.getElementById('btn-run').textContent = '▶ Run';
+        document.getElementById('btn-run').classList.remove('active');
+        updateStatus('yellow', 'Reset');
+        showOverlay('Resetting...', 1000);
+
+        if (module._wasm_reset) {
+            module._wasm_reset();
+        }
+    }
+
+    // ---- Fullscreen ----
+    function toggleFullscreen() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            emulatorContainer.requestFullscreen();
+        }
+    }
+
+    // ---- Event Handlers ----
+
+    // Toolbar buttons
+    document.getElementById('btn-rom').addEventListener('click', function() {
+        currentDialogMode = 'rom';
+        document.getElementById('dialog-title').textContent = 'Load ROM/RPKG';
+        document.getElementById('dialog-desc').textContent = 'Select a ROM file (.rom) or RPKG file (.rpkg) to boot the emulator.';
+        fileInput.accept = '.rom,.rpkg';
+        fileDialog.classList.add('visible');
+    });
+
+    document.getElementById('btn-install').addEventListener('click', function() {
+        currentDialogMode = 'install';
+        document.getElementById('dialog-title').textContent = 'Install SIS Package';
+        document.getElementById('dialog-desc').textContent = 'Select a SIS package (.sis, .sisx) to install.';
+        fileInput.accept = '.sis,.sisx';
+        fileDialog.classList.add('visible');
+    });
+
+    document.getElementById('btn-run').addEventListener('click', function() {
+        if (isRunning) {
+            pauseEmulation();
+        } else {
+            startEmulation();
+        }
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', resetEmulation);
+    document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+
+    document.getElementById('btn-settings').addEventListener('click', function() {
+        settingsPanel.classList.toggle('visible');
+    });
+
+    document.getElementById('settings-close').addEventListener('click', function() {
+        settingsPanel.classList.remove('visible');
+    });
+
+    // File dialog
+    document.getElementById('dialog-cancel').addEventListener('click', function() {
+        fileDialog.classList.remove('visible');
+    });
+
+    document.getElementById('dialog-ok').addEventListener('click', function() {
+        fileDialog.classList.remove('visible');
+    });
+
+    fileDropZone.addEventListener('click', function() {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function() {
+        handleFileSelect(this.files);
+    });
+
+    // Drag and drop
+    fileDropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        fileDropZone.classList.add('dragover');
+    });
+
+    fileDropZone.addEventListener('dragleave', function() {
+        fileDropZone.classList.remove('dragover');
+    });
+
+    fileDropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        fileDropZone.classList.remove('dragover');
+        handleFileSelect(e.dataTransfer.files);
+    });
+
+    // Global drag and drop on the emulator container
+    emulatorContainer.addEventListener('dragover', function(e) {
+        e.preventDefault();
+    });
+
+    emulatorContainer.addEventListener('drop', function(e) {
+        e.preventDefault();
+        currentDialogMode = 'rom';
+        handleFileSelect(e.dataTransfer.files);
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'F11') {
+            e.preventDefault();
+            toggleFullscreen();
+        } else if (e.key === 'Escape') {
+            if (isRunning) pauseEmulation();
+        }
+    });
+
+    // Settings handlers
+    document.getElementById('setting-volume').addEventListener('input', function() {
+        if (module && module._wasm_set_volume) {
+            module._wasm_set_volume(parseInt(this.value));
+        }
+    });
+
+    document.getElementById('setting-scale').addEventListener('input', function() {
+        var scale = parseFloat(this.value);
+        resizeCanvas(scale);
+    });
+
+    // ---- Canvas Resizing ----
+    function resizeCanvas(scale) {
+        // Default Symbian resolution is 360x640 or 240x320
+        var baseWidth = 360;
+        var baseHeight = 640;
+
+        // If orientation is landscape
+        if (window.innerWidth > window.innerHeight) {
+            baseWidth = 640;
+            baseHeight = 360;
+        }
+
+        canvas.width = baseWidth * scale;
+        canvas.height = baseHeight * scale;
+        canvas.style.width = canvas.width + 'px';
+        canvas.style.height = canvas.height + 'px';
+    }
+
+    // ---- FPS Counter ----
+    var frameCount = 0;
+    var lastFpsTime = performance.now();
+
+    function updateFPS() {
+        frameCount++;
+        var now = performance.now();
+        if (now - lastFpsTime >= 1000) {
+            fpsDisplay.textContent = frameCount + ' FPS';
+            frameCount = 0;
+            lastFpsTime = now;
+        }
+        if (isRunning) {
+            animationFrameId = requestAnimationFrame(updateFPS);
+        }
+    }
+
+    // ---- Initial Setup ----
+    resizeCanvas(2);
+    window.addEventListener('resize', function() {
+        var scale = parseFloat(document.getElementById('setting-scale').value);
+        resizeCanvas(scale);
+    });
+
+    // Show touch controls on mobile
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        document.getElementById('touch-controls').classList.add('visible');
+    }
+
+    // ---- Initialize ----
+    initModule();
+
+})();
+</script>
+
+</body>
+</html>

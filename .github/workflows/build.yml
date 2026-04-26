@@ -14,11 +14,20 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Cache emsdk
+        uses: actions/cache@v4
+        with:
+          path: emsdk-cache
+          key: emsdk-${{ runner.os }}-latest-${{ github.run_id }}
+          restore-keys: |
+            emsdk-${{ runner.os }}-latest-
+
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v13
         with:
           version: latest
           actions-cache-folder: 'emsdk-cache'
+          no-cache: true
 
       - name: Verify Emscripten
         run: emcc --version
